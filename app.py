@@ -1,6 +1,7 @@
 import os
 import requests
 from flask import Flask, request, jsonify
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -56,7 +57,7 @@ def search_module(module, phone):
             }
     return None
 
-# Get Notes for a given record (optional, can be used by lookup)
+# Get Notes for a given record (optional, used by lookup)
 def get_notes(module, record_id, max_notes=3):
     url = f"https://www.zohoapis.com/crm/v2/{module}/{record_id}/Notes"
     headers = {
@@ -91,14 +92,14 @@ def lookup():
     phone = data.get("phone")
     if not phone:
         return jsonify({"error": "Phone number is required"}), 400
-    
+
     # Prefer Leads first, fallback to Contacts
     record = search_module("Leads", phone) or search_module("Contacts", phone)
-    
+
     notes = []
     if record:
         notes = get_notes(record.get("module"), record.get("id"))
-    
+
     if record:
         return jsonify({
             "first_name": record.get("First_Name", ""),
@@ -120,10 +121,6 @@ def update_status():
     phone = data.get("phone")
     record_id = data.get("record_id")
     module = data.get("module")
-    conversation_summary = data.get("conversation_summary", "")
-
-    if not conversation_summary:
-        return jsonify({"error": "Conversation summary is required"}), 400
 
     # If no record_id/module provided → search by phone
     if not (record_id and module):
@@ -179,13 +176,13 @@ def update_status():
     if update_response.status_code != 200:
         return jsonify({"error": f"Failed to update AI_Agent_Status: {update_response.status_code}"}), 500
 
-    # POST a Note
+    # POST a generic Note
     notes_url = f"https://www.zohoapis.com/crm/v2/{module}/{record_id}/Notes"
     notes_payload = {
         "data": [
             {
-                "Note_Title": "Voice Agent Summary",
-                "Note_Content": conversation_summary
+                "Note_Title": "Voice Agent Contact",
+                "Note_Content": f"Patient contacted AI Voice Agent on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}. Interaction recorded."
             }
         ]
     }
@@ -194,7 +191,8 @@ def update_status():
         refresh_access_token()
         headers["Authorization"] = f"Zoho-oauthtoken {ZOHO_ACCESS_TOKEN}"
         notes_response = requests.post(notes_url, headers=headers, json=notes_payload)
-    if notes_response.status_code != 200:
+    # FIXED HERE: accept 201 as success
+    if notes_response.status_code not in [200, 201]:
         return jsonify({"error": f"Failed to post Note: {notes_response.status_code}"}), 500
 
     return jsonify({
@@ -209,4 +207,3 @@ def update_status():
 @app.route("/", methods=["GET"])
 def home():
     return "Himplant Lookup API is running."
-
